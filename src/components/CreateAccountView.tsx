@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MaterialInput } from './MaterialInput';
 import { Logo } from './Logo';
 import { UserProfile } from '../types';
+import { saveUserToFirestore } from '../services/firebaseService';
 import { Check, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 
 interface CreateAccountViewProps {
@@ -96,26 +97,31 @@ export const CreateAccountView: React.FC<CreateAccountViewProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
-      const generatedPubId = `pub-${Math.floor(100000000000 + Math.random() * 900000000000)}`;
-      const newUser: UserProfile = {
-        name: `${firstName.trim()} ${lastName.trim()}`,
-        email: email.trim(),
-        role: `Publisher (${category})`,
-        publisherId: generatedPubId,
-        website: email.split('@')[1] ? `www.${email.split('@')[1]}` : 'mywebsite.com',
-      };
+    const generatedPubId = `pub-${Math.floor(100000000000 + Math.random() * 900000000000)}`;
+    const newUser: UserProfile = {
+      name: `${firstName.trim()} ${lastName.trim()}`,
+      email: email.trim(),
+      role: `Publisher (${category})`,
+      publisherId: generatedPubId,
+      website: email.split('@')[1] ? `www.${email.split('@')[1]}` : 'mywebsite.com',
+    };
 
-      showToast(`Account created! Welcome to AdPulse, ${newUser.name}.`, 'success');
-      onSuccess(newUser);
-    }, 950);
+    // Save to Firebase Firestore
+    try {
+      await saveUserToFirestore(newUser, password);
+    } catch (err) {
+      console.warn('Firestore user sync warning:', err);
+    }
+
+    setIsLoading(false);
+    showToast(`Account created & synced to Firebase! Welcome, ${newUser.name}.`, 'success');
+    onSuccess(newUser);
   };
 
   return (

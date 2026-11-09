@@ -3,6 +3,7 @@ import { MaterialInput } from './MaterialInput';
 import { Logo } from './Logo';
 import { DEMO_CREDENTIALS } from '../data/mockAuth';
 import { UserProfile } from '../types';
+import { findUserInFirestore } from '../services/firebaseService';
 import { Check, Sparkles, Loader2, ArrowRight } from 'lucide-react';
 
 interface SignInViewProps {
@@ -48,53 +49,21 @@ export const SignInView: React.FC<SignInViewProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSignIn = (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
     setIsLoading(true);
     setErrors({});
 
-    // Simulate network authentication latency
-    setTimeout(() => {
-      const cleanEmail = identifier.trim().toLowerCase();
-      const matchedCred = DEMO_CREDENTIALS.find(
-        (c) => c.email.toLowerCase() === cleanEmail || c.name.toLowerCase() === cleanEmail
-      );
+    const cleanEmail = identifier.trim().toLowerCase();
 
-      if (!matchedCred) {
-        // If it's a test custom email but valid, allow simulated sign-in or check match
-        if (cleanEmail.includes('adpulse.io') || cleanEmail.includes('@')) {
-          if (password !== 'Publisher2026!' && password !== 'AdRevenue#2026' && password.length < 8) {
-            setErrors({
-              password: 'Wrong password. Try again or click Forgot password to reset it.',
-            });
-            setIsLoading(false);
-            showToast('Authentication failed. Check your password.', 'error');
-            return;
-          }
+    // 1. Check offline demo credentials
+    const matchedCred = DEMO_CREDENTIALS.find(
+      (c) => c.email.toLowerCase() === cleanEmail || c.name.toLowerCase() === cleanEmail
+    );
 
-          const customUser: UserProfile = {
-            name: identifier.split('@')[0].replace('.', ' ').toUpperCase(),
-            email: identifier.trim(),
-            role: 'Verified Web Publisher',
-            publisherId: `pub-${Math.floor(100000000000 + Math.random() * 900000000000)}`,
-            website: 'mywebsite.com',
-          };
-          setIsLoading(false);
-          showToast(`Welcome back, ${customUser.name}!`, 'success');
-          onSuccess(customUser);
-          return;
-        }
-
-        setErrors({
-          identifier: "Couldn't find your AdPulse account with this identifier.",
-        });
-        setIsLoading(false);
-        showToast("Account not found. Click 'Demo Credentials' to autofill.", 'error');
-        return;
-      }
-
+    if (matchedCred) {
       if (matchedCred.password !== password) {
         setErrors({
           password: 'Wrong password. Try again or click Forgot password to reset it.',
@@ -104,7 +73,6 @@ export const SignInView: React.FC<SignInViewProps> = ({
         return;
       }
 
-      // Successful sign in
       setIsLoading(false);
       const user: UserProfile = {
         name: matchedCred.name,
@@ -115,7 +83,66 @@ export const SignInView: React.FC<SignInViewProps> = ({
       };
       showToast(`Signed in successfully as ${user.name}`, 'success');
       onSuccess(user);
-    }, 850);
+      return;
+    }
+
+    // 2. Check live Firebase Firestore user accounts
+    try {
+      const firestoreUser = await findUserInFirestore(cleanEmail);
+      if (firestoreUser) {
+        if (firestoreUser.password && firestoreUser.password !== password) {
+          setErrors({
+            password: 'Wrong password for this Firebase account. Try again.',
+          });
+          setIsLoading(false);
+          showToast('Incorrect password.', 'error');
+          return;
+        }
+
+        setIsLoading(false);
+        showToast(`Signed in with Firebase account (${firestoreUser.name})`, 'success');
+        onSuccess({
+          name: firestoreUser.name,
+          email: firestoreUser.email,
+          role: firestoreUser.role,
+          publisherId: firestoreUser.publisherId,
+          website: firestoreUser.website,
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn('Firestore lookup warning:', err);
+    }
+
+    // 3. Fallback for custom prototype emails
+    if (cleanEmail.includes('adpulse.io') || cleanEmail.includes('@')) {
+      if (password !== 'Publisher2026!' && password !== 'AdRevenue#2026' && password.length < 8) {
+        setErrors({
+          password: 'Wrong password. Try again or click Forgot password to reset it.',
+        });
+        setIsLoading(false);
+        showToast('Authentication failed. Check your password.', 'error');
+        return;
+      }
+
+      const customUser: UserProfile = {
+        name: identifier.split('@')[0].replace('.', ' ').toUpperCase(),
+        email: identifier.trim(),
+        role: 'Verified Web Publisher',
+        publisherId: `pub-${Math.floor(100000000000 + Math.random() * 900000000000)}`,
+        website: 'mywebsite.com',
+      };
+      setIsLoading(false);
+      showToast(`Welcome back, ${customUser.name}!`, 'success');
+      onSuccess(customUser);
+      return;
+    }
+
+    setErrors({
+      identifier: "Couldn't find your account with this email.",
+    });
+    setIsLoading(false);
+    showToast("Account not found. Click 'Demo Credentials' or Create an Account.", 'error');
   };
 
   const handleQuickFill = (cred: typeof DEMO_CREDENTIALS[0]) => {

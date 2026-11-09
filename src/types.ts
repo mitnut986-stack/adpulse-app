@@ -18,3 +18,11 @@ export interface DemoCredential {
   publisherId: string;
   earningsThisMonth: string;
 }
+
+export interface FirestoreProduct {
+  id: string;
+  name: string;
+  price: number;
+  createTime?: string;
+  updateTime?: string;
+}

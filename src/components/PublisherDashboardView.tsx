@@ -1,6 +1,13 @@
-import React from 'react';
-import { UserProfile } from '../types';
+import React, { useState, useEffect } from 'react';
+import { UserProfile, FirestoreProduct } from '../types';
 import { Logo } from './Logo';
+import {
+  getFirestoreProducts,
+  createFirestoreProduct,
+  deleteFirestoreProduct,
+  FIREBASE_PROJECT_ID,
+  FIREBASE_CONSOLE_URL,
+} from '../services/firebaseService';
 import {
   TrendingUp,
   DollarSign,
@@ -14,6 +21,13 @@ import {
   ChevronRight,
   ShieldCheck,
   CreditCard,
+  Database,
+  Plus,
+  Trash2,
+  Loader2,
+  Package,
+  X,
+  AlertCircle,
 } from 'lucide-react';
 
 interface PublisherDashboardViewProps {
@@ -27,6 +41,73 @@ export const PublisherDashboardView: React.FC<PublisherDashboardViewProps> = ({
   onSignOut,
   showToast,
 }) => {
+  // Firestore Products State
+  const [products, setProducts] = useState<FirestoreProduct[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
+  const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
+  const [newProductName, setNewProductName] = useState<string>('');
+  const [newProductPrice, setNewProductPrice] = useState<string>('');
+  const [isSavingProduct, setIsSavingProduct] = useState<boolean>(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const loadProducts = async () => {
+    setIsLoadingProducts(true);
+    try {
+      const data = await getFirestoreProducts();
+      setProducts(data);
+    } catch (err) {
+      showToast('Could not load products from Firestore', 'error');
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  const handleCreateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProductName.trim()) {
+      showToast('Please enter a product name', 'error');
+      return;
+    }
+    const priceNum = parseFloat(newProductPrice);
+    if (isNaN(priceNum) || priceNum < 0) {
+      showToast('Please enter a valid price', 'error');
+      return;
+    }
+
+    setIsSavingProduct(true);
+    try {
+      const created = await createFirestoreProduct(newProductName, priceNum);
+      setProducts((prev) => [created, ...prev]);
+      setNewProductName('');
+      setNewProductPrice('');
+      setIsAddModalOpen(false);
+      showToast(`Product "${created.name}" created in Firestore!`, 'success');
+    } catch (err) {
+      showToast('Failed to create product in Firestore', 'error');
+    } finally {
+      setIsSavingProduct(false);
+    }
+  };
+
+  const handleDeleteProduct = async (id: string, name: string) => {
+    setDeletingId(id);
+    try {
+      await deleteFirestoreProduct(id);
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+      showToast(`Deleted "${name}" from Firestore`, 'info');
+    } catch (err) {
+      showToast('Failed to delete product', 'error');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const totalProductValue = products.reduce((sum, p) => sum + (p.price || 0), 0);
+
   return (
     <div className="min-h-screen bg-[#f8fafd] flex flex-col">
       {/* Top Navigation Bar */}
@@ -95,6 +176,167 @@ export const PublisherDashboardView: React.FC<PublisherDashboardViewProps> = ({
             </button>
           </div>
         </div>
+
+        {/* FIREBASE FIRESTORE LIVE PRODUCTS SECTION */}
+        <section className="bg-white border border-[#dadce0] rounded-2xl p-5 sm:p-6 shadow-xs">
+          {/* Section Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#dadce0] gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center text-orange-600">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-semibold text-[#202124]">
+                    Firebase Firestore Database
+                  </h3>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Connected
+                  </span>
+                </div>
+                <p className="text-xs text-[#5f6368] mt-0.5 flex items-center gap-1 flex-wrap">
+                  <span>Project:</span>
+                  <span className="font-mono text-[#202124] bg-neutral-100 px-1.5 py-0.5 rounded">{FIREBASE_PROJECT_ID}</span>
+                  <span>· Collection:</span>
+                  <span className="font-mono text-[#1a73e8] bg-blue-50 px-1.5 py-0.5 rounded">products</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Actions: Firebase Console link, Refresh, Add */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <a
+                href={FIREBASE_CONSOLE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#5f6368] hover:text-[#202124] hover:bg-neutral-100 border border-[#dadce0] rounded-lg transition-colors"
+                title="Open document in Firebase Console"
+              >
+                <span>Console</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+
+              <button
+                type="button"
+                onClick={loadProducts}
+                disabled={isLoadingProducts}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#1a73e8] hover:bg-blue-50 border border-[#dadce0] rounded-lg transition-colors"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingProducts ? 'animate-spin' : ''}`} />
+                <span>Sync</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#1a73e8] hover:bg-[#1557bf] rounded-lg transition-colors shadow-2xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Product</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Products Summary Pills */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 my-4">
+            <div className="bg-[#f8fafd] border border-[#e8eaed] rounded-xl p-3">
+              <span className="text-[11px] text-[#5f6368]">Total Products</span>
+              <p className="text-lg font-bold text-[#202124] mt-0.5">
+                {isLoadingProducts ? '...' : products.length}
+              </p>
+            </div>
+            <div className="bg-[#f8fafd] border border-[#e8eaed] rounded-xl p-3">
+              <span className="text-[11px] text-[#5f6368]">Catalog Value</span>
+              <p className="text-lg font-bold text-[#0f9d58] mt-0.5">
+                {isLoadingProducts ? '...' : `$${totalProductValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              </p>
+            </div>
+            <div className="bg-[#f8fafd] border border-[#e8eaed] rounded-xl p-3 col-span-2 sm:col-span-1">
+              <span className="text-[11px] text-[#5f6368]">Live Sync Status</span>
+              <p className="text-xs font-medium text-[#1a73e8] mt-1.5 flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                REST API Active
+              </p>
+            </div>
+          </div>
+
+          {/* Products List */}
+          {isLoadingProducts ? (
+            <div className="py-12 flex flex-col items-center justify-center text-[#5f6368] gap-2">
+              <Loader2 className="w-6 h-6 animate-spin text-[#1a73e8]" />
+              <p className="text-xs">Fetching documents from Firestore...</p>
+            </div>
+          ) : products.length === 0 ? (
+            <div className="py-10 text-center border border-dashed border-[#dadce0] rounded-xl p-6">
+              <Package className="w-8 h-8 text-[#5f6368] mx-auto mb-2 opacity-50" />
+              <p className="text-sm font-medium text-[#202124]">No products found in Firestore</p>
+              <p className="text-xs text-[#5f6368] mt-1">Click "Add Product" above to create your first document in Firestore.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-[#dadce0] text-[#5f6368] uppercase text-[10px] tracking-wider bg-neutral-50/60">
+                    <th className="py-2.5 px-3 font-semibold">Product Name</th>
+                    <th className="py-2.5 px-3 font-semibold">Price</th>
+                    <th className="py-2.5 px-3 font-semibold hidden md:table-cell">Document ID</th>
+                    <th className="py-2.5 px-3 font-semibold hidden sm:table-cell">Created</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#e8eaed]">
+                  {products.map((p) => {
+                    const isTargetDoc = p.id === '3GgEyjaaNWjb3Xh9TSgJ';
+                    return (
+                      <tr
+                        key={p.id}
+                        className={`hover:bg-blue-50/30 transition-colors ${
+                          isTargetDoc ? 'bg-amber-50/30' : ''
+                        }`}
+                      >
+                        <td className="py-3 px-3 font-medium text-[#202124]">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm">{p.name}</span>
+                            {isTargetDoc && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-800 rounded">
+                                Firebase URL Target
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-semibold text-[#0f9d58] text-sm">
+                          ${Number(p.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-[11px] text-[#5f6368] hidden md:table-cell">
+                          <span className="bg-neutral-100 px-1.5 py-0.5 rounded">{p.id}</span>
+                        </td>
+                        <td className="py-3 px-3 text-[#5f6368] text-[11px] hidden sm:table-cell">
+                          {p.createTime ? new Date(p.createTime).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProduct(p.id, p.name)}
+                            disabled={deletingId === p.id}
+                            className="p-1.5 text-[#5f6368] hover:text-[#d93025] hover:bg-red-50 rounded transition-colors"
+                            title={`Delete ${p.name}`}
+                          >
+                            {deletingId === p.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-[#d93025]" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
         {/* Estimated Earnings Grid (Google AdSense signature layout) */}
         <section>
@@ -242,6 +484,98 @@ export const PublisherDashboardView: React.FC<PublisherDashboardViewProps> = ({
           </div>
         </section>
       </main>
+
+      {/* Add Product Modal Dialog */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-[#dadce0] animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-[#dadce0]">
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5 text-[#1a73e8]" />
+                <h3 className="font-semibold text-base text-[#202124]">
+                  Add Product to Firestore
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(false)}
+                className="p-1 rounded-full text-[#5f6368] hover:text-[#202124] hover:bg-neutral-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateProduct} className="py-4 space-y-4">
+              <div>
+                <label className="text-xs font-medium text-[#5f6368] block mb-1">
+                  Product Name
+                </label>
+                <input
+                  type="text"
+                  value={newProductName}
+                  onChange={(e) => setNewProductName(e.target.value)}
+                  placeholder="e.g. Premium Ad Slot, Nut, Banner"
+                  required
+                  autoFocus
+                  disabled={isSavingProduct}
+                  className="w-full h-10 px-3 border border-[#dadce0] rounded-lg text-sm text-[#202124] focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8] outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-[#5f6368] block mb-1">
+                  Price ($ USD)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={newProductPrice}
+                  onChange={(e) => setNewProductPrice(e.target.value)}
+                  placeholder="e.g. 2222"
+                  required
+                  disabled={isSavingProduct}
+                  className="w-full h-10 px-3 border border-[#dadce0] rounded-lg text-sm text-[#202124] focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8] outline-none"
+                />
+              </div>
+
+              <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-2.5 text-[11px] text-[#174ea6] flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#1a73e8]" />
+                <span>This document will be written directly to collection <code className="font-semibold">products</code> on project <code className="font-semibold">{FIREBASE_PROJECT_ID}</code>.</span>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  disabled={isSavingProduct}
+                  className="px-4 py-2 text-xs font-medium text-[#5f6368] hover:bg-neutral-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isSavingProduct}
+                  className="px-5 py-2 text-xs font-medium text-white bg-[#1a73e8] hover:bg-[#1557bf] rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
+                >
+                  {isSavingProduct ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Save to Firestore</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
