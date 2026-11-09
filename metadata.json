@@ -1,0 +1,6 @@
+{
+  "name": "AdPulse - Sign in",
+  "description": "Professional Google AdSense-inspired authentication experience with clean Material Design aesthetics, account creation, and password recovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
